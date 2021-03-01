@@ -1,0 +1,215 @@
+#!/bin/bash
+
+# Start a group of dtach sesssions
+PMUX_NAME=$1
+shift
+
+if [ -z ${PMUX_NAME+x} ]; then
+	echo "Usage: $0 <name> [<new session command>]"
+	exit 1
+fi
+
+# Prefer dtach and fallback to abduco
+DTACH=`which dtach` 2>/dev/null
+if [ $? -eq 0 ]; then
+	export DTACH="${DTACH}"
+	export DTACH_OPTS="-e ^a -z"
+else
+	DTACH=`which abduco` 2>/dev/null
+	if [ $? -eq 0 ]; then
+		export DTACH="${DTACH} -e ^a"
+		export DTACH_OPTS=""
+	else
+		echo "Either abduco or dtach must be in the path to use pmux"
+		exit 1
+	fi
+fi
+
+# Set the directory so future commands can access it
+export SESSION_DIR=/tmp/${USER}/pmux-${PMUX_NAME}
+
+mkdir -p "${SESSION_DIR}"
+
+function getSessions() {
+	local sessions=()
+	local count=0
+
+	for f in "${SESSION_DIR}"/*; do
+		[ -S "$f" ] || continue
+		sessions+=("$f")
+		count=$((count+1))
+	done
+
+	echo ${sessions[@]}
+	return $count
+}
+
+function getSession() {
+	local session=
+	local count=0
+
+	for f in "${SESSION_DIR}"/*; do
+		[ -S "$f" ] || continue
+
+		name=`basename "$f" | sed 's,[0-9]* ,,'`
+		printf -v num "%02d" $count
+
+		# Ensure that the session has the correct number in its name in case
+		# any sessions have been closed.
+		newpath="${SESSION_DIR}/$num $name"
+		mv "$f" "${newpath}"
+
+		if ((count == $1 )); then
+			session="$newpath"
+		fi
+		count=$((count+1))
+	done
+
+	echo ${session}
+	return $count
+}
+
+
+index=-1
+last=0
+path=$(getSession $index)
+count=$?
+
+# If there are no sessions in the directory then create the default set
+if (( count == 0 )); then
+	if (( $# > 0 )); then
+		$@
+		index=$?
+		path=$(getSession $index)
+		count=$?
+	fi
+fi
+
+while true; do
+	if (( index >= count )); then
+		# path="${SESSION_DIR}/$(date "+%Y-%m-%d %H:%M:%S")"
+		printf -v num "%02d" $index
+		path="${SESSION_DIR}/${num} -"
+	else
+echo "index: $index"
+		path=$(getSession $index)
+	fi
+
+	prevcount=$count
+	echo "${DTACH} -A \"${path}\" ${DTACH_OPTS} ${SHELL}"
+	${DTACH} -A "${path}" ${DTACH_OPTS} ${SHELL}
+
+	sessions=$(getSessions)
+	count=$?
+
+	if (( count < prevcount )); then
+		# A session has ended, don't try to read input.
+		if (( count == 0)); then
+			# The last session has ended
+			echo "Closing pmux session"
+			exit 0
+		fi
+
+		if (( index > 0)); then
+			index=$((index-1))
+		else
+			index=0
+		fi
+	else
+		clear
+		echo "pmux: Next|Prev|Alternate|Create|Detach"
+		echo
+		i=0
+		for f in "${SESSION_DIR}"/*; do
+			[ -S "$f" ] || continue
+
+			if (( i == index )); then
+				echo -en "*"
+			else
+				echo -en " "
+			fi
+			basename "$f"
+			i=$((i+1))
+		done
+		echo
+
+		read -s -n1
+
+		case "${REPLY}" in
+			n)
+				#next
+				last=$index
+				index=$((index+1))
+				if (( index >= count )); then
+					index=0
+				fi
+				;;
+			p)
+				# prev
+				last=$index
+				index=$((index-1))
+				if (( index < 0 )); then
+					index=$((count-1))
+				fi
+				;;
+			c)
+				# create
+				last=$index
+				index=$count
+				;;
+
+			0|1|2|3|4|5|6|7|8|9)
+				if (( REPLY < count )); then
+					last=$index
+					index=${REPLY}
+				fi
+				;;
+
+			# TODO shift+numbers
+
+			d)
+				# Detach
+				exit 0
+				;;
+
+			.)
+				echo -en "Enter new name: "
+				read
+				newname="${SESSION_DIR}/${REPLY}"
+
+				if [ -f "${newname}" ]; then
+					echo "Names must be unique"
+					read
+				else
+					printf -v num "%02d" $index
+					mv "${path}" "${num} ${newname}"
+				fi
+				;;
+
+			\?)
+				(
+					echo "n         next window"
+					echo "p         prev window"
+					echo "a         last active window"
+					echo "c         create a new window"
+					echo "d         detach"
+					echo "0-9       jump to a specific window"
+					echo
+					echo "Sessions:"
+					ls "${SESSION_DIR}"
+				) | less
+				;;
+
+			"")
+				;;
+
+			a|*)
+				# Last
+				tmp=$last
+				last=$index
+				index=$tmp
+				;;
+		esac
+	fi
+done
+
