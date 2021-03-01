@@ -26,7 +26,7 @@ else
 fi
 
 # Set the directory so future commands can access it
-export SESSION_DIR=/tmp/${USER}/pmux-${PMUX_NAME}
+export SESSION_DIR=~/.pmux/${PMUX_NAME}
 
 mkdir -p "${SESSION_DIR}"
 
@@ -173,16 +173,17 @@ echo "index: $index"
 				;;
 
 			.)
+				# rename
 				echo -en "Enter new name: "
 				read
-				newname="${SESSION_DIR}/${REPLY}"
+				printf -v num "%02d" $index
+				newname="${SESSION_DIR}/${num} ${REPLY}"
 
 				if [ -f "${newname}" ]; then
 					echo "Names must be unique"
 					read
 				else
-					printf -v num "%02d" $index
-					mv "${path}" "${num} ${newname}"
+					mv "${path}" "${newname}"
 				fi
 				;;
 
