@@ -13,7 +13,7 @@ fi
 DTACH=`which dtach` 2>/dev/null
 if [ $? -eq 0 ]; then
 	export DTACH="${DTACH}"
-	export DTACH_OPTS="-e ^a -z"
+	export DTACH_OPTS="-e ^a -z -r winch"
 else
 	DTACH=`which abduco` 2>/dev/null
 	if [ $? -eq 0 ]; then
