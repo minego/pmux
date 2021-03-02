@@ -57,7 +57,9 @@ function getSession() {
 		# Ensure that the session has the correct number in its name in case
 		# any sessions have been closed.
 		newpath="${SESSION_DIR}/$num $name"
-		mv "$f" "${newpath}"
+		if [ "$f" != "${newpath}" ]; then
+			mv "$f" "${newpath}"
+		fi
 
 		if ((count == $1 )); then
 			session="$newpath"
@@ -95,14 +97,13 @@ echo "index: $index"
 		path=$(getSession $index)
 	fi
 
-	prevcount=$count
 	echo "${DTACH} -A \"${path}\" ${DTACH_OPTS} ${SHELL}"
 	${DTACH} -A "${path}" ${DTACH_OPTS} ${SHELL}
 
 	sessions=$(getSessions)
 	count=$?
 
-	if (( count < prevcount )); then
+	if [ ! -S "${path}" ]; then
 		# A session has ended, don't try to read input.
 		if (( count == 0)); then
 			# The last session has ended
