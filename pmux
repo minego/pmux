@@ -46,20 +46,20 @@ function getSession() {
 function renameSession() {
 	echo -en "Enter new name: "
 	read
-	printf -v num "%02d" $index
+	num=`basename "$1" | sed 's,\([0-9]*\) .*,\1,'`
 	newname="${SESSION_DIR}/${num} ${REPLY}"
 
 	if [ -f "${newname}" ]; then
 		echo "Names must be unique"
 		read
 	else
-		mv "${path}" "${newname}"
+		echo "mv \"$1\" \"${newname}\""
+		mv "$1" "${newname}"
 	fi
 
-	# TODO The environment variable needs to be updated as well so that a second
-	#		rename works... Is that possible?
 	if [ $kittytabs ]; then
-		kitty @ set-tab-title "${newname}"
+		name=`basename "${newname}"`
+		kitty @ set-tab-title "${name}"
 
 		export PMUX_SESSION="${newname}"
 	fi
@@ -193,7 +193,12 @@ elif [ $kittyrenametab ]; then
 		exit 1
 	fi
 
+	# TODO  The environment variable needs to be updated as well so that a 2nd
+	#		rename works... There doesn't seem to be an obvious way to do this
+	#		with kitty right now. The tab will get renamed but the session will
+	#		not be.
 	renameSession "${PMUX_SESSION}"
+	exit $?
 fi
 
 while true; do
