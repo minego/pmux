@@ -43,6 +43,28 @@ function getSession() {
 	return $count
 }
 
+function renameSession() {
+	echo -en "Enter new name: "
+	read
+	printf -v num "%02d" $index
+	newname="${SESSION_DIR}/${num} ${REPLY}"
+
+	if [ -f "${newname}" ]; then
+		echo "Names must be unique"
+		read
+	else
+		mv "${path}" "${newname}"
+	fi
+
+	# TODO The environment variable needs to be updated as well so that a second
+	#		rename works... Is that possible?
+	if [ $kittytabs ]; then
+		kitty @ set-tab-title "${newname}"
+
+		export PMUX_SESSION="${newname}"
+	fi
+}
+
 function openKittyTab() {
 	name=`basename "$1"`
 	OPTS="--type=tab --copy-env --location last"
@@ -54,6 +76,7 @@ function openKittyTab() {
 	echo "kitty @ launch ${OPTS} ${DTACH} -A \"$1\" ${DTACH_OPTS} ${SHELL}"
 	kitty @ launch ${OPTS} --tab-title "${name}" \
 		--env PMUX_NAME="${PMUX_NAME}" \
+		--env PMUX_SESSION="$1" \
 		${DTACH} -A "$1" ${DTACH_OPTS} ${SHELL}
 }
 
@@ -74,6 +97,10 @@ while [[ "$1" == "--"* ]]; do
 
 		--kitty-create-tab)
 			kittycreatetab=1
+			;;
+
+		--kitty-rename-tab)
+			kittyrenametab=1
 			;;
 
 		*)
@@ -142,20 +169,32 @@ if [ $kittytabs ]; then
 		firstpath="${SESSION_DIR}/00 -"
 	fi
 
+	# Set the title of this tab
+	name=`basename "${firstpath}"`
+	kitty @ set-tab-title "${name}"
+
 	# This tab now becomes the first session
+	export PMUX_SESSION="${firstpath}"
 	echo "${DTACH} -A \"${firstpath}\" ${DTACH_OPTS} ${SHELL}"
 	exec ${DTACH} -A "${firstpath}" ${DTACH_OPTS} ${SHELL}
 elif [ $kittycreatetab ]; then
 	# Just create a new tab
 	printf -v num "%02d" $count
 	path="${SESSION_DIR}/${num} -"
-echo "new path: ${path}"
 
 	openKittyTab "$path" 1
 	exit 0
+elif [ $kittyrenametab ]; then
+	# Rename the session runing in the kitty tab
+	kittytabs=1
+
+	if [ "x" == "x${PMUX_SESSION}" ]; then
+		echo "PMUX_SESSION must be set to use this"
+		exit 1
+	fi
+
+	renameSession "${PMUX_SESSION}"
 fi
-
-
 
 while true; do
 	if (( index >= count )); then
@@ -241,17 +280,7 @@ while true; do
 
 			.)
 				# rename
-				echo -en "Enter new name: "
-				read
-				printf -v num "%02d" $index
-				newname="${SESSION_DIR}/${num} ${REPLY}"
-
-				if [ -f "${newname}" ]; then
-					echo "Names must be unique"
-					read
-				else
-					mv "${path}" "${newname}"
-				fi
+				renameSession "${path}"
 				;;
 
 			\?)
