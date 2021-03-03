@@ -74,9 +74,10 @@ function openKittyTab() {
 	fi
 
 	echo "kitty @ launch ${OPTS} ${DTACH} -A \"$1\" ${DTACH_OPTS} ${SHELL}"
-	kitty @ launch ${OPTS} --tab-title "${name}" \
-		--env PMUX_NAME="${PMUX_NAME}" \
-		--env PMUX_SESSION="$1" \
+	kitty @ launch ${OPTS} --tab-title "${name}"	\
+		--env PMUX_NAME="${PMUX_NAME}"				\
+		--env PMUX_SESSION="$1"						\
+		--env PMUX_PWD="$PMUX_PWD"					\
 		${DTACH} -A "$1" ${DTACH_OPTS} ${SHELL}
 }
 
@@ -121,6 +122,10 @@ if [[ "x" == "x${PMUX_NAME}" ]]; then
 	exit 1
 fi
 export PMUX_NAME
+
+if [ "x" == "x${PMUX_PWD}" ]; then
+	export PMUX_PWD="${PWD}"
+fi
 
 # Set the directory so future commands can access it
 export SESSION_DIR=~/.pmux/${PMUX_NAME}
@@ -182,7 +187,15 @@ elif [ $kittycreatetab ]; then
 	printf -v num "%02d" $count
 	path="${SESSION_DIR}/${num} -"
 
-	openKittyTab "$path" 1
+	# Start dtach for the new tab without attaching so the PWD will be set when
+	# the tab does attach to it. This is a workaround for not being able to set
+	# the dir when kitty starts the tab.
+	(
+		cd "$PMUX_PWD"
+		${DTACH} -n "${path}" ${DTACH_OPTS} $SHELL
+	)
+
+	openKittyTab "${path}" 1
 	exit 0
 elif [ $kittyrenametab ]; then
 	# Rename the session runing in the kitty tab
