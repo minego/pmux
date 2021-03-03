@@ -61,7 +61,7 @@ function renameSession() {
 		name=`basename "${newname}"`
 		kitty @ set-tab-title "${name}"
 
-		export PMUX_SESSION="${newname}"
+		export PMUX_PATH="${newname}"
 	fi
 }
 
@@ -75,8 +75,8 @@ function openKittyTab() {
 
 	echo "kitty @ launch ${OPTS} ${DTACH} -A \"$1\" ${DTACH_OPTS} ${SHELL}"
 	kitty @ launch ${OPTS} --tab-title "${name}"	\
+		--env PMUX_PATH="$1"						\
 		--env PMUX_NAME="${PMUX_NAME}"				\
-		--env PMUX_SESSION="$1"						\
 		--env PMUX_PWD="$PMUX_PWD"					\
 		${DTACH} -A "$1" ${DTACH_OPTS} ${SHELL}
 }
@@ -179,7 +179,11 @@ if [ $kittytabs ]; then
 	kitty @ set-tab-title "${name}"
 
 	# This tab now becomes the first session
-	export PMUX_SESSION="${firstpath}"
+	PMUX_PATH="${firstpath}"
+	export PMUX_PATH
+	export PMUX_NAME
+	export PMUX_PWD
+
 	echo "${DTACH} -A \"${firstpath}\" ${DTACH_OPTS} ${SHELL}"
 	exec ${DTACH} -A "${firstpath}" ${DTACH_OPTS} ${SHELL}
 elif [ $kittycreatetab ]; then
@@ -201,8 +205,8 @@ elif [ $kittyrenametab ]; then
 	# Rename the session runing in the kitty tab
 	kittytabs=1
 
-	if [ "x" == "x${PMUX_SESSION}" ]; then
-		echo "PMUX_SESSION must be set to use this"
+	if [ "x" == "x${PMUX_PATH}" ]; then
+		echo "PMUX_PATH must be set to use this"
 		exit 1
 	fi
 
@@ -210,7 +214,7 @@ elif [ $kittyrenametab ]; then
 	#		rename works... There doesn't seem to be an obvious way to do this
 	#		with kitty right now. The tab will get renamed but the session will
 	#		not be.
-	renameSession "${PMUX_SESSION}"
+	renameSession "${PMUX_PATH}"
 	exit $?
 fi
 
