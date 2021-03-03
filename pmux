@@ -1,25 +1,5 @@
 #!/bin/bash
 
-while [[ "$1" == "--"* ]]; do
-	arg="$1"
-	shift
-
-	case "$arg" in
-		*)
-			echo "Unknown argument: $arg"
-			exit 1
-	esac
-done
-
-# Start a group of dtach sesssions
-PMUX_NAME=$1
-shift
-
-if [[ "x" == "x${PMUX_NAME}" ]]; then
-	echo "Usage: $0 <name> [<new session command>]"
-	exit 1
-fi
-
 # Prefer dtach and fallback to abduco
 DTACH=`which dtach` 2>/dev/null
 if [ $? -eq 0 ]; then
@@ -35,11 +15,6 @@ else
 		exit 1
 	fi
 fi
-
-# Set the directory so future commands can access it
-export SESSION_DIR=~/.pmux/${PMUX_NAME}
-
-mkdir -p "${SESSION_DIR}"
 
 function getSession() {
 	local session=
@@ -68,6 +43,61 @@ function getSession() {
 	return $count
 }
 
+function openKittyTab() {
+	name=`basename "$1"`
+	OPTS="--type=tab --copy-env --location last"
+
+	if [[ ! $2 ]]; then
+		OPTS="${OPTS} --keep-focus"
+	fi
+
+	echo "kitty @ launch ${OPTS} ${DTACH} -A \"$1\" ${DTACH_OPTS} ${SHELL}"
+	kitty @ launch ${OPTS} --tab-title "${name}" \
+		--env PMUX_NAME="${PMUX_NAME}" \
+		${DTACH} -A "$1" ${DTACH_OPTS} ${SHELL}
+}
+
+while [[ "$1" == "--"* ]]; do
+	arg="$1"
+	shift
+
+	case "$arg" in
+		--kitty)
+			if [ "x" != "x${SSH_TTY}" ]; then
+				echo "Unable to use kitty tabs with ssh"
+				exit 1
+			fi
+
+			# Enable kitty tabs
+			kittytabs=1
+			;;
+
+		--kitty-create-tab)
+			kittycreatetab=1
+			;;
+
+		*)
+			echo "Unknown argument: $arg"
+			exit 1
+	esac
+done
+
+# Start a group of dtach sesssions
+
+if [[ "x" == "x${PMUX_NAME}" ]]; then
+	PMUX_NAME=$1
+	shift
+fi
+
+if [[ "x" == "x${PMUX_NAME}" ]]; then
+	echo "Usage: $0 <name> [<new session command>]"
+	exit 1
+fi
+export PMUX_NAME
+
+# Set the directory so future commands can access it
+export SESSION_DIR=~/.pmux/${PMUX_NAME}
+mkdir -p "${SESSION_DIR}"
 
 index=0
 last=0
@@ -84,9 +114,51 @@ if (( count == 0 )); then
 	fi
 fi
 
+if [ $kittytabs ]; then
+	# Create a tab in kitty for each session in the directory, and let kitty
+	# manage the tabs. This script does not need to continue running since kitty
+	# will manage the tabs.
+
+	firstpath=
+	count=0
+
+	for f in "${SESSION_DIR}"/*; do
+		[ -S "$f" ] || continue
+
+		if [ "x" == "x${firstpath}" ]; then
+			firstpath="$f"
+		else
+			if ((count == index)); then
+				openKittyTab "$f" 1
+			else
+				openKittyTab "$f"
+			fi
+		fi
+		count=$((count+1))
+	done
+
+	if [ "x" == "x${firstpath}" ]; then
+		# Create the first session
+		firstpath="${SESSION_DIR}/00 -"
+	fi
+
+	# This tab now becomes the first session
+	echo "${DTACH} -A \"${firstpath}\" ${DTACH_OPTS} ${SHELL}"
+	exec ${DTACH} -A "${firstpath}" ${DTACH_OPTS} ${SHELL}
+elif [ $kittycreatetab ]; then
+	# Just create a new tab
+	printf -v num "%02d" $count
+	path="${SESSION_DIR}/${num} -"
+echo "new path: ${path}"
+
+	openKittyTab "$path" 1
+	exit 0
+fi
+
+
+
 while true; do
 	if (( index >= count )); then
-		# path="${SESSION_DIR}/$(date "+%Y-%m-%d %H:%M:%S")"
 		printf -v num "%02d" $index
 		path="${SESSION_DIR}/${num} -"
 		count=$((count+1))
@@ -130,7 +202,6 @@ while true; do
 		echo
 
 		read -s -n1
-
 		case "${REPLY}" in
 			n)
 				#next
