@@ -1,10 +1,21 @@
 #!/bin/bash
 
+while [[ "$1" == "--"* ]]; do
+	arg="$1"
+	shift
+
+	case "$arg" in
+		*)
+			echo "Unknown argument: $arg"
+			exit 1
+	esac
+done
+
 # Start a group of dtach sesssions
 PMUX_NAME=$1
 shift
 
-if [ -z ${PMUX_NAME+x} ]; then
+if [[ "x" == "x${PMUX_NAME}" ]]; then
 	echo "Usage: $0 <name> [<new session command>]"
 	exit 1
 fi
@@ -29,20 +40,6 @@ fi
 export SESSION_DIR=~/.pmux/${PMUX_NAME}
 
 mkdir -p "${SESSION_DIR}"
-
-function getSessions() {
-	local sessions=()
-	local count=0
-
-	for f in "${SESSION_DIR}"/*; do
-		[ -S "$f" ] || continue
-		sessions+=("$f")
-		count=$((count+1))
-	done
-
-	echo ${sessions[@]}
-	return $count
-}
 
 function getSession() {
 	local session=
@@ -72,7 +69,7 @@ function getSession() {
 }
 
 
-index=-1
+index=0
 last=0
 path=$(getSession $index)
 count=$?
@@ -92,21 +89,19 @@ while true; do
 		# path="${SESSION_DIR}/$(date "+%Y-%m-%d %H:%M:%S")"
 		printf -v num "%02d" $index
 		path="${SESSION_DIR}/${num} -"
+		count=$((count+1))
 	else
-echo "index: $index"
 		path=$(getSession $index)
+		count=$?
 	fi
 
 	echo "${DTACH} -A \"${path}\" ${DTACH_OPTS} ${SHELL}"
 	${DTACH} -A "${path}" ${DTACH_OPTS} ${SHELL}
 
-	sessions=$(getSessions)
-	count=$?
-
 	if [ ! -S "${path}" ]; then
 		# A session has ended, don't try to read input.
-		if (( count == 0)); then
-			# The last session has ended
+		if (( count <= 1)); then
+			# The session that ended was the last session
 			echo "Closing pmux session"
 			exit 0
 		fi
