@@ -1,12 +1,54 @@
 #!/bin/bash
 
 # Start and manage a group of dtach sesssions
+MYSELF="$0"
 
 function doExit() {
-	if [ $1 -ne 0 ]; then
-		read
+	if [ ! $quiet ]; then
+		echo "$1"
+
+		if [ $2 -ne 0 ]; then
+			read
+		fi
 	fi
-	exit $1
+	exit $2
+}
+
+function cmd() {
+	local c
+	local print=0
+	local ssh_args=""
+
+	if [ "$1" == "-p" ]; then
+		print=1
+		shift
+	fi
+	if [ "$1" == "-t" ]; then
+		ssh_args="-t"
+		shift
+	fi
+
+	if [[ "x" != "x${PMUX_HOST}" ]]; then
+		c="ssh ${ssh_args} ${PMUX_HOST} "
+	else
+		c=""
+	fi
+
+	for arg in "$@"; do
+		arg=`printf "%q" "${arg}"`
+
+		if (( ssh > 0 )); then
+			arg=`printf "%q" "${arg}"`
+		fi
+
+		c="${c}${arg} "
+	done
+
+	if (( print > 0 )); then
+		echo $c
+	else
+		eval $c
+	fi
 }
 
 function getSession() {
@@ -23,17 +65,31 @@ function getSession() {
 		# any sessions have been closed.
 		newpath="${SESSION_DIR}/$num $name"
 		if [ "$f" != "${newpath}" ]; then
-			${PMUX_CMD_PREFIX}mv "$f" "${newpath}"
+			cmd mv "$f" "${newpath}"
 		fi
 
 		if ((count == $1 )); then
 			session="$newpath"
 		fi
 		count=$((count+1))
-	done < <( (${PMUX_CMD_PREFIX}ls "${SESSION_DIR}") )
+	done < <( (cmd ls -1 "${SESSION_DIR}") )
 
 	echo ${session}
 	return $count
+}
+
+# Start but don't attach to a session
+# Usage: createSession <index>
+function createSession() {
+	printf -v num "%02d" $1
+
+	path="${SESSION_DIR}/${num} -"
+	(
+		cd "$PMUX_PWD"
+		export PMUX_PATH="${path}"
+		cmd -t ${DTACH} -n "${PMUX_PATH}" ${DTACH_OPTS} $SHELL
+	)
+	echo "${path}"
 }
 
 # Wrapper for the kitty launch command for opening a tab, window, etc
@@ -49,7 +105,7 @@ function kittyLaunch() {
 		--env PMUX_PATH="${path}"					\
 		--env PMUX_HOST="${PMUX_HOST}"				\
 		--env PATH="${PATH}"						\
-		${DTACH} -A "$path" ${DTACH_OPTS} ${SHELL}
+		${MYSELF} --attach-tab "${path}"
 }
 
 # Create a tab in kitty for each session in the directory, and let kitty manage
@@ -73,7 +129,7 @@ function openKittyTabs() {
 
 		tabid=$(kittyLaunch "$f" ${OPTS})
 		count=$((count+1))
-	done < <( (${PMUX_CMD_PREFIX}ls "${SESSION_DIR}") )
+	done < <( (cmd ls -1 "${SESSION_DIR}") )
 }
 
 function renameSession() {
@@ -82,12 +138,12 @@ function renameSession() {
 	num=`basename "$1" | sed 's,\([0-9]*\) .*,\1,'`
 	newname="${SESSION_DIR}/${num} ${REPLY}"
 
-	${PMUX_CMD_PREFIX}test -f "${newname}"
+	cmd test -f "${newname}"
 	if [ $? -eq 0 ]; then
 		echo "Names must be unique"
 		read
 	else
-		${PMUX_CMD_PREFIX}mv "$1" "${newname}"
+		cmd mv "$1" "${newname}"
 	fi
 
 	if [ $kittytabs ]; then
@@ -98,6 +154,7 @@ function renameSession() {
 	fi
 }
 
+homedir="${HOME}"
 while [[ "$1" == "--"* ]]; do
 	arg="$1"
 	shift
@@ -105,13 +162,14 @@ while [[ "$1" == "--"* ]]; do
 	case "$arg" in
 		--host)
 			export PMUX_HOST="$1"
+
+			homedir=`pwd`
 			shift
 			;;
 
 		--kitty)
 			if [ "x" != "x${SSH_TTY}" ]; then
-				echo "Unable to use kitty tabs with ssh"
-				doExit 1
+				doExit "Unable to use kitty tabs with ssh" 1
 			fi
 
 			# Enable kitty tabs
@@ -126,15 +184,24 @@ while [[ "$1" == "--"* ]]; do
 			kittyrenametab=1
 			;;
 
+		--attach-tab)
+			export PMUX_PATH="$1"
+			shift
+			attachtab=1
+			;;
+
+		--attach)
+			attachonly=1
+			;;
+
+		--quiet)
+			quiet=1
+			;;
+
 		*)
-			echo "Unknown argument: $arg"
-			doExit 1
+			doExit "Unknown argument: $arg" 1
 	esac
 done
-
-if [[ "x" != "x${PMUX_HOST}" ]]; then
-	export PMUX_CMD_PREFIX="ssh -t ${PMUX_HOST} "
-fi
 
 if [[ "x" == "x${PMUX_NAME}" ]]; then
 	PMUX_NAME=$1
@@ -142,25 +209,22 @@ if [[ "x" == "x${PMUX_NAME}" ]]; then
 fi
 
 if [[ "x" == "x${PMUX_NAME}" ]]; then
-	echo "Usage: $0 <name> [<new session command>]"
-	doExit 1
+	doExit "Usage: $0 <name> [OPTIONS]" 1
 fi
 export PMUX_NAME
 
 # Prefer dtach and fallback to abduco
-DTACH=`${PMUX_CMD_PREFIX}which dtach` 2>/dev/null
+DTACH=`cmd which dtach` 2>/dev/null
 if [ $? -eq 0 ]; then
-	export DTACH="${PMUX_CMD_PREFIX}${DTACH}"
+	export DTACH="${DTACH}"
 	export DTACH_OPTS="-e ^a -z -r winch"
 else
-	DTACH=`${PMUX_CMD_PREFIX}which abduco` 2>/dev/null
+	DTACH=`cmd which abduco` 2>/dev/null
 	if [ $? -eq 0 ]; then
-		export DTACH="${PMUX_CMD_PREFIX}${DTACH} -e ^a"
+		export DTACH="${DTACH} -e ^a"
 		export DTACH_OPTS=""
 	else
-		echo "Either abduco or dtach must be in the path to use pmux"
-		echo "PATH: ${PATH}"
-		doExit 1
+		doExit "Either abduco or dtach must be in the path to use pmux" 1
 	fi
 fi
 
@@ -169,8 +233,8 @@ if [ "x" == "x${PMUX_PWD}" ]; then
 fi
 
 # Set the directory so future commands can access it
-export SESSION_DIR="~/.pmux/${PMUX_NAME}"
-${PMUX_CMD_PREFIX}mkdir -p "${SESSION_DIR}"
+export SESSION_DIR="${homedir}/.pmux/${PMUX_NAME}"
+cmd mkdir -p "${SESSION_DIR}"
 
 index=0
 last=0
@@ -184,17 +248,18 @@ count=$?
 # they must set the appropriate environment variables for those sessions
 # including PMUX_PATH
 if (( count == 0 )); then
-	if (( $# > 0 )); then
-		$@
-		index=$?
-		path=$(getSession $index)
-		count=$?
+	if [ $attachonly ]; then
+		doExit "There are no existing sessions" 1
+	else
+		path=`createSession 0`
+		index=0
+		count=1
 	fi
 fi
 
 if [ $kittytabs ]; then
 	openKittyTabs
-	doExit 0
+	doExit "" 0
 elif [ $kittycreatetab ]; then
 	# Just create a new tab
 	printf -v num "%02d" $count
@@ -206,18 +271,17 @@ elif [ $kittycreatetab ]; then
 	(
 		cd "$PMUX_PWD"
 		export PMUX_PATH="${path}"
-		${DTACH} -n "${PMUX_PATH}" ${DTACH_OPTS} $SHELL
+		cmd -t ${DTACH} -n "${PMUX_PATH}" ${DTACH_OPTS} $SHELL
 	)
 
 	tabid=$(kittyLaunch "${path}" --type=tab --location=last)
-	doExit 0
+	doExit "" 0
 elif [ $kittyrenametab ]; then
 	# Rename the session runing in the kitty tab
 	kittytabs=1
 
 	if [ "x" == "x${PMUX_PATH}" ]; then
-		echo "PMUX_PATH must be set to use this"
-		doExit 1
+		doExit "PMUX_PATH must be set to use this" 1
 	fi
 
 	# TODO  The environment variable needs to be updated as well so that a 2nd
@@ -225,37 +289,31 @@ elif [ $kittyrenametab ]; then
 	#		with kitty right now. The tab will get renamed but the session will
 	#		not be.
 	renameSession "${PMUX_PATH}"
-	doExit $?
+	doExit "" $?
+elif [ $attachtab ]; then
+	cmd ${DTACH} -A "${PMUX_PATH}" ${DTACH_OPTS} ${SHELL}
+	doExit "" $?
 fi
 
 while true; do
 	if (( index >= count )); then
-		printf -v num "%02d" $index
-		path="${SESSION_DIR}/${num} -"
+		path=`createSession ${index}`
 		count=$((count+1))
-
-		# Create a new session and attach to it
-		ARG="-A"
-		CMD="${SHELL}"
 	else
 		path=$(getSession $index)
 		count=$?
-
-		# Attach to an existing session
-		ARG="-a"
-		CMD=
 	fi
 
-	echo "${DTACH} ${ARG} \"${path}\" ${DTACH_OPTS} ${CMD}"
-	${DTACH} ${ARG} "${path}" ${DTACH_OPTS} ${CMD}
+	# Attach to the session
+	cmd -t ${DTACH} -A "${path}" ${DTACH_OPTS} ${SHELL}
 
-	${PMUX_CMD_PREFIX}test -S "${path}"
+	# We've now detached from the session, check to see if it has exited
+	cmd test -S "${path}"
 	if [ $? -ne 0 ]; then
 		# A session has ended, don't try to read input.
 		if (( count <= 1)); then
 			# The session that ended was the last session
-			echo "Closing pmux session"
-			doExit 0
+			doExit "Closing pmux session" 0
 		fi
 
 		if (( index > 0)); then
@@ -264,6 +322,7 @@ while true; do
 			index=0
 		fi
 	else
+		# The session has detached, but didn't exit. Prompt the user for an action.
 		clear
 		echo "pmux: Next|Prev|Alternate|Create|Detach"
 		echo
@@ -279,7 +338,7 @@ while true; do
 			fi
 			basename "$f"
 			i=$((i+1))
-		done < <( (${PMUX_CMD_PREFIX}ls "${SESSION_DIR}") )
+		done < <( (cmd ls -1 "${SESSION_DIR}") )
 		echo
 
 		read -s -n1
@@ -317,7 +376,7 @@ while true; do
 
 			d)
 				# Detach
-				doExit 0
+				doExit "" 0
 				;;
 
 			.)
@@ -335,7 +394,7 @@ while true; do
 					echo "0-9       jump to a specific window"
 					echo
 					echo "Sessions:"
-					${PMUX_CMD_PREFIX}ls "${SESSION_DIR}"
+					cmd ls -1 "${SESSION_DIR}"
 				) | less
 				;;
 
