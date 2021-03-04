@@ -6,8 +6,7 @@ function getSession() {
 	local session=
 	local count=0
 
-# TODO This is not working. The script runs in a subshell, and that isn't okay
-	${PMUX_CMD_PREFIX}ls "${SESSION_DIR}" | while read n; do
+	while IFS= read -r n; do
 		f="${SESSION_DIR}/${n}"
 
 		name=`echo "$n" | sed 's,[0-9]* ,,'`
@@ -24,7 +23,7 @@ function getSession() {
 			session="$newpath"
 		fi
 		count=$((count+1))
-	done
+	done < <( (${PMUX_CMD_PREFIX}ls "${SESSION_DIR}") )
 
 	echo ${session}
 	return $count
@@ -50,7 +49,7 @@ function kittyLaunch() {
 function openKittyTabs() {
 	local count=0
 
-	${PMUX_CMD_PREFIX}ls "${SESSION_DIR}" | while read n; do
+	while IFS= read -r n; do
 		f="${SESSION_DIR}/${n}"
 
 		if (( count == 0 )); then
@@ -65,7 +64,7 @@ function openKittyTabs() {
 
 		kittyLaunch "$f" ${OPTS}
 		count=$((count+1))
-	done
+	done < <( (${PMUX_CMD_PREFIX}ls "${SESSION_DIR}") )
 }
 
 function renameSession() {
@@ -257,7 +256,7 @@ while true; do
 		echo
 		i=0
 
-		${PMUX_CMD_PREFIX}ls "${SESSION_DIR}" | while read n; do
+		while IFS= read -r n; do
 			f="${SESSION_DIR}/${n}"
 
 			if (( i == index )); then
@@ -267,7 +266,7 @@ while true; do
 			fi
 			basename "$f"
 			i=$((i+1))
-		done
+		done < <( (${PMUX_CMD_PREFIX}ls "${SESSION_DIR}") )
 		echo
 
 		read -s -n1
