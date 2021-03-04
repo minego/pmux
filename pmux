@@ -105,7 +105,6 @@ while [[ "$1" == "--"* ]]; do
 	case "$arg" in
 		--host)
 			export PMUX_HOST="$1"
-			export PMUX_CMD_PREFIX="ssh \"$1\" "
 			shift
 			;;
 
@@ -132,6 +131,10 @@ while [[ "$1" == "--"* ]]; do
 			doExit 1
 	esac
 done
+
+if [[ "x" != "x${PMUX_HOST}" ]]; then
+	export PMUX_CMD_PREFIX="ssh -t ${PMUX_HOST} "
+fi
 
 if [[ "x" == "x${PMUX_NAME}" ]]; then
 	PMUX_NAME=$1
@@ -166,7 +169,7 @@ if [ "x" == "x${PMUX_PWD}" ]; then
 fi
 
 # Set the directory so future commands can access it
-export SESSION_DIR=~/.pmux/${PMUX_NAME}
+export SESSION_DIR="~/.pmux/${PMUX_NAME}"
 ${PMUX_CMD_PREFIX}mkdir -p "${SESSION_DIR}"
 
 index=0
