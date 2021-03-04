@@ -2,6 +2,13 @@
 
 # Start and manage a group of dtach sesssions
 
+function doExit() {
+	if [ $1 ]; then
+		read
+	fi
+	exit $1
+}
+
 function getSession() {
 	local session=
 	local count=0
@@ -36,10 +43,12 @@ function kittyLaunch() {
 	local name=`basename "$path"`
 
 	kitty @ launch $@ --tab-title "${name}"			\
+		--copy-env									\
 		--env PMUX_NAME="${PMUX_NAME}"				\
 		--env PMUX_PWD="$PMUX_PWD"					\
 		--env PMUX_PATH="${path}"					\
 		--env PMUX_HOST="${PMUX_HOST}"				\
+		--env PATH="${PATH}"						\
 		${DTACH} -A "$path" ${DTACH_OPTS} ${SHELL}
 }
 
@@ -103,7 +112,7 @@ while [[ "$1" == "--"* ]]; do
 		--kitty)
 			if [ "x" != "x${SSH_TTY}" ]; then
 				echo "Unable to use kitty tabs with ssh"
-				exit 1
+				doExit 1
 			fi
 
 			# Enable kitty tabs
@@ -120,9 +129,20 @@ while [[ "$1" == "--"* ]]; do
 
 		*)
 			echo "Unknown argument: $arg"
-			exit 1
+			doExit 1
 	esac
 done
+
+if [[ "x" == "x${PMUX_NAME}" ]]; then
+	PMUX_NAME=$1
+	shift
+fi
+
+if [[ "x" == "x${PMUX_NAME}" ]]; then
+	echo "Usage: $0 <name> [<new session command>]"
+	doExit 1
+fi
+export PMUX_NAME
 
 # Prefer dtach and fallback to abduco
 DTACH=`${PMUX_CMD_PREFIX}which dtach` 2>/dev/null
@@ -136,20 +156,10 @@ else
 		export DTACH_OPTS=""
 	else
 		echo "Either abduco or dtach must be in the path to use pmux"
-		exit 1
+		echo "PATH: ${PATH}"
+		doExit 1
 	fi
 fi
-
-if [[ "x" == "x${PMUX_NAME}" ]]; then
-	PMUX_NAME=$1
-	shift
-fi
-
-if [[ "x" == "x${PMUX_NAME}" ]]; then
-	echo "Usage: $0 <name> [<new session command>]"
-	exit 1
-fi
-export PMUX_NAME
 
 if [ "x" == "x${PMUX_PWD}" ]; then
 	export PMUX_PWD="${PWD}"
@@ -181,7 +191,7 @@ fi
 
 if [ $kittytabs ]; then
 	openKittyTabs
-	exit 0
+	doExit 0
 elif [ $kittycreatetab ]; then
 	# Just create a new tab
 	printf -v num "%02d" $count
@@ -197,14 +207,14 @@ elif [ $kittycreatetab ]; then
 	)
 
 	kittyLaunch "${path}" --type=tab --location=last
-	exit 0
+	doExit 0
 elif [ $kittyrenametab ]; then
 	# Rename the session runing in the kitty tab
 	kittytabs=1
 
 	if [ "x" == "x${PMUX_PATH}" ]; then
 		echo "PMUX_PATH must be set to use this"
-		exit 1
+		doExit 1
 	fi
 
 	# TODO  The environment variable needs to be updated as well so that a 2nd
@@ -212,7 +222,7 @@ elif [ $kittyrenametab ]; then
 	#		with kitty right now. The tab will get renamed but the session will
 	#		not be.
 	renameSession "${PMUX_PATH}"
-	exit $?
+	doExit $?
 fi
 
 while true; do
@@ -242,7 +252,7 @@ while true; do
 		if (( count <= 1)); then
 			# The session that ended was the last session
 			echo "Closing pmux session"
-			exit 0
+			doExit 0
 		fi
 
 		if (( index > 0)); then
@@ -304,7 +314,7 @@ while true; do
 
 			d)
 				# Detach
-				exit 0
+				doExit 0
 				;;
 
 			.)
