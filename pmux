@@ -98,13 +98,19 @@ function kittyLaunch() {
 	shift
 	local name=`basename "$path"`
 
+	export PMUX_NAME
+	export PMUX_PWD
+	export PMUX_HOST
+	export PMUX_PATH="${path}"
+
 	kitty @ launch $@ --tab-title "${name}"			\
-		--copy-env									\
+		--cwd "$PMUX_PWD"							\
 		--env PMUX_NAME="${PMUX_NAME}"				\
-		--env PMUX_PWD="$PMUX_PWD"					\
-		--env PMUX_PATH="${path}"					\
+		--env PMUX_PWD="${PMUX_PWD}"				\
 		--env PMUX_HOST="${PMUX_HOST}"				\
+		--env PMUX_PATH="${path}"					\
 		--env PATH="${PATH}"						\
+		--copy-env									\
 		${MYSELF} --attach-tab "${path}"
 }
 
